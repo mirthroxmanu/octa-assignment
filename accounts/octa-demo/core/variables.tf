@@ -28,6 +28,4 @@ variable "aws_region" {
   default = "ap-south-1"
 }
 
-variable "octabyte_common_rds_master_user" {}
-variable "octabyte_common_rds_master_password" {}
 variable "sshkey_master_pub" {}

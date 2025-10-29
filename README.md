@@ -237,10 +237,6 @@ aws_region         = "ap-south-1"
 
 # SSH Key (generate if you don't have one)
 sshkey_master_pub = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDxxxxx..."
-
-# Database Credentials (these will be read from encrypted file)
-octabyte_common_rds_master_user     = ""  # Will be read from KMS
-octabyte_common_rds_master_password = ""  # Will be read from KMS
 EOF
 ```
 
