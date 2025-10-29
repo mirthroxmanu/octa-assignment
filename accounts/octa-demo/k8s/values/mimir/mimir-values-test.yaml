@@ -1,0 +1,158 @@
+# Multi-tenant Mimir configuration with S3 backend
+# Namespace: mimir
+# Service Account: octabyte-mimir-backend-bucket
+
+# Disable MinIO (using external S3 instead)
+minio:
+  enabled: false
+
+# Disable Alertmanager
+alertmanager:
+  enabled: false
+
+# Disable Kafka (using traditional architecture)
+kafka:
+  enabled: false
+
+# Configure service account for S3 access
+serviceAccount:
+  create: true
+  name: octabyte-mimir-backend-bucket
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::<account_id>:role/octabyte-mimir-s3-role
+
+# Gateway configuration
+gateway:
+  enabled: true
+  nginx:
+    config:
+      serverSnippet: |
+        # Enforce X-Scope-OrgID header for multi-tenancy
+        if ($http_x_scope_orgid = "") {
+          return 400 'X-Scope-OrgID header is required for multi-tenant access';
+        }
+
+# Disable zone-aware replication (simpler setup)
+ingester:
+  zoneAwareReplication:
+    enabled: false
+
+store_gateway:
+  zoneAwareReplication:
+    enabled: false
+
+# Main Mimir configuration
+mimir:
+  structuredConfig:
+    # Enable multi-tenancy
+    multitenancy_enabled: true
+    
+    # Common S3 configuration
+    common:
+      storage:
+        backend: s3
+        s3:
+          bucket_name: octabyte-mimir-backend-bucket
+          endpoint: s3.amazonaws.com
+          region: ap-south-1
+    
+    # Blocks storage with prefix
+    blocks_storage:
+      backend: s3
+      s3:
+        bucket_name: octabyte-mimir-backend-bucket
+        endpoint: s3.amazonaws.com
+        region: ap-south-1
+        # Use prefix to separate blocks data
+        prefix: blocks
+      bucket_store:
+        sync_dir: /data/tsdb-sync
+      tsdb:
+        dir: /data/tsdb
+        head_compaction_interval: 15m
+        wal_replay_concurrency: 3
+    
+    # Ruler storage with different prefix
+    ruler_storage:
+      backend: s3
+      s3:
+        bucket_name: octabyte-mimir-backend-bucket
+        endpoint: s3.amazonaws.com
+        region: ap-south-1
+        # Different prefix for ruler data
+        prefix: ruler
+    
+    # Compactor configuration
+    compactor:
+      compaction_interval: 30m
+      deletion_delay: 2h
+      max_closing_blocks_concurrency: 2
+      max_opening_blocks_concurrency: 4
+      symbols_flushers_concurrency: 4
+      first_level_compaction_wait_period: 25m
+      data_dir: /data
+      sharding_ring:
+        wait_stability_min_duration: 1m
+        heartbeat_period: 1m
+        heartbeat_timeout: 4m
+    
+    # Distributor configuration
+    distributor:
+      ring:
+        heartbeat_period: 1m
+        heartbeat_timeout: 4m
+    
+    # Ingester configuration
+    ingester:
+      ring:
+        final_sleep: 0s
+        num_tokens: 512
+        tokens_file_path: /data/tokens
+        unregister_on_shutdown: false
+        heartbeat_period: 2m
+        heartbeat_timeout: 10m
+        # Zone awareness disabled
+        zone_awareness_enabled: false
+    
+    ingester_client:
+      grpc_client_config:
+        max_recv_msg_size: 104857600
+        max_send_msg_size: 104857600
+    
+    # Query configuration
+    querier:
+      max_concurrent: 16
+    
+    query_scheduler:
+      max_outstanding_requests_per_tenant: 800
+    
+    # Store gateway configuration
+    store_gateway:
+      sharding_ring:
+        heartbeat_period: 1m
+        heartbeat_timeout: 10m
+        wait_stability_min_duration: 1m
+        tokens_file_path: /data/tokens
+        unregister_on_shutdown: false
+        # Zone awareness disabled
+        zone_awareness_enabled: false
+    
+    # Ruler configuration
+    ruler:
+      enable_api: true
+      rule_path: /data
+    
+    # Limits
+    limits:
+      max_total_query_length: 12000h
+      max_query_parallelism: 240
+      max_cache_freshness: 10m
+    
+    # Memberlist configuration
+    memberlist:
+      abort_if_cluster_join_fails: false
+      compression_enabled: false
+    
+    # Runtime configuration
+    runtime_config:
+      file: /var/mimir/runtime.yaml

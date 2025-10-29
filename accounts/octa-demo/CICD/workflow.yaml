@@ -1,0 +1,128 @@
+name: test-app
+on:
+  push:
+    branches:
+      - staging
+      - qa
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.config.outputs.environment }}
+      runner: ${{ steps.config.outputs.runner }}
+      cluster: ${{ steps.config.outputs.cluster }}
+      appname: ${{ steps.config.outputs.appname }}
+    steps:
+      - id: config
+        run: |
+          case "${{ github.ref_name }}" in
+            "staging")
+              echo "environment=staging" >> $GITHUB_OUTPUT
+              echo "runner=<runner>" >> $GITHUB_OUTPUT
+              echo "cluster=<staging-cluster>" >> $GITHUB_OUTPUT
+              echo "appname=test-app" >> $GITHUB_OUTPUT
+              ;;
+            "qa")
+              echo "environment=qa" >> $GITHUB_OUTPUT
+              echo "runner=<runner>" >> $GITHUB_OUTPUT
+              echo "cluster=qa-cluster" >> $GITHUB_OUTPUT
+              echo "appname=test-app" >> $GITHUB_OUTPUT
+              ;;
+          esac
+  build:
+    needs: setup
+    runs-on: ${{ needs.setup.outputs.runner }}
+    environment: ${{ needs.setup.outputs.environment }}
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      image-tag: ${{ steps.tag.outputs.image-tag }}
+      imageuri: ${{ steps.imageuri.outputs.imageuri }}
+    env:
+      AWS_REGION: ap-south-1
+      APP_NAME: ${{ needs.setup.outputs.appname }}
+      ENVIRONMENT: ${{ needs.setup.outputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: tag
+        run: echo "image-tag=$(date +'%d-%m-%Y')-${{ github.run_number }}" >> $GITHUB_OUTPUT
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        id: imageuri
+        run: |
+          IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/${{ env.ENVIRONMENT }}/${{ env.APP_NAME }}:${{ steps.tag.outputs.image-tag }}"
+          docker build -t $IMAGE_URI .
+          docker push $IMAGE_URI
+          echo "imageuri=${{ steps.login-ecr.outputs.registry }}/${{ env.ENVIRONMENT }}/${{ env.APP_NAME }}" >> $GITHUB_OUTPUT
+  deploy:
+    needs: [setup, build]
+    runs-on: ${{ needs.setup.outputs.runner }}
+    environment: ${{ needs.setup.outputs.environment }}
+    env:
+      AWS_REGION: ap-south-1
+      APP_NAME: ${{ needs.setup.outputs.appname }}
+      ENVIRONMENT: ${{ needs.setup.outputs.environment }}
+      EKS_CLUSTER: ${{ needs.setup.outputs.cluster }}
+      IMAGE_TAG: ${{ needs.build.outputs.image-tag }}
+      IMAGE_URI: ${{ needs.build.outputs.imageuri}}
+    steps:
+      - name: Checkout helm charts
+        uses: actions/checkout@v4
+        with:
+          repository: repositor-name
+          path: <path>
+          ref: main
+          token: ${{ secrets.GIT_PAT }}
+
+      - name: kubeconfig
+        run: |
+            echo "Install Aws Cli"
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip awscliv2.zip
+            sudo ./aws/install
+            echo "Update KubeConfig"
+            aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER }} --region ${{ env.AWS_REGION }}  --kubeconfig ./kubeconfig
+            echo 'KUBE_CONFIG_DATA<<EOF' >> $GITHUB_ENV
+            echo $(cat ./kubeconfig | base64) >> $GITHUB_ENV
+            echo 'EOF' >> $GITHUB_ENV
+      - name: Checkout Helm chart repo (<helm chart repo>)
+        uses: actions/checkout@v4
+        with:
+          repository: <org>/<repository>
+          path: <path>
+          ref: main
+          token: ${{ secrets.GIT_PAT }}
+
+      - name: Inject environment variables into temp Helm values
+        run: |
+          cat > temp-values.yaml <<EOF
+            env:
+          EOF
+          echo "======= BEGIN temp-values.yaml ======="
+          cat temp-values.yaml
+          echo "======== END temp-values.yaml ========"
+
+
+      - name: Deploy with Helm
+        run: |
+          echo "Install Helm"
+          curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+          chmod 700 get_helm.sh
+          ./get_helm.sh 
+          echo "Deploying using chart from <repopath>"
+          helm upgrade --install ${{ env.APP_NAME }} \
+            ./<repopath>/helm-charts/app-base-common/source/octa \
+            --values .<path to values>/${{ env.ENVIRONMENT }}/${{ env.APP_NAME }}/values.yaml \
+            --values temp-values.yaml \
+            --set=image.repository=${{ env.IMAGE_URI }} \
+            --set=image.tag=${{ env.IMAGE_TAG }} \
+            --namespace ${{ env.ENVIRONMENT }} \
+            --timeout 15m \
+          --create-namespace

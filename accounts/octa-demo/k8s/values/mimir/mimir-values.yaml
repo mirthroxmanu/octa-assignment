@@ -1,0 +1,196 @@
+# Multi-tenant Mimir configuration with S3 backend
+# Namespace: mimir
+# Service Account: octabyte-mimir-backend-bucket
+
+# Disable MinIO (using external S3 instead)
+minio:
+  enabled: false
+
+# Disable Alertmanager
+alertmanager:
+  enabled: false
+
+# Configure service account for S3 access
+serviceAccount:
+  create: true
+  name: mimir
+  annotations:
+    # For AWS EKS with IRSA - Terraform will inject the IAM role ARN
+    eks.amazonaws.com/role-arn: arn:aws:iam::<account_id>:role/octabyte-mimir-s3-role
+    
+    # For GCP GKE with Workload Identity - uncomment and use this instead
+    # iam.gke.io/gcp-service-account: mimir-sa@PROJECT_ID.iam.gserviceaccount.com
+    
+    # For Azure AKS with Workload Identity - uncomment and use this instead
+    # azure.workload.identity/client-id: CLIENT_ID
+
+# Mimir configuration
+mimir:
+  structuredConfig:
+    # Enable multi-tenancy (requires X-Scope-OrgID header)
+    multitenancy_enabled: true
+    
+    # Common S3 configuration for all components
+    common:
+      storage:
+        backend: s3
+        s3:
+          bucket_name: octabyte-mimir-backend-bucket
+          endpoint: s3.amazonaws.com  # Change to your S3 endpoint
+          region: ap-south-1  # Injected by Terraform
+          # No access_key_id or secret_access_key - uses service account credentials
+          
+    # Blocks storage (TSDB) configuration
+    blocks_storage:
+      backend: s3
+      s3:
+        bucket_name: octabyte-mimir-backend-bucket
+        endpoint: s3.amazonaws.com
+        region: ap-south-1
+      bucket_store:
+        sync_dir: /data/tsdb-sync
+      tsdb:
+        dir: /data/tsdb
+        
+    # Ruler storage configuration
+    ruler_storage:
+      backend: s3
+      s3:
+        bucket_name: octabyte-mimir-backend-bucket
+        endpoint: s3.amazonaws.com
+        region: ap-south-1
+
+# Gateway configuration to enforce tenant IDs
+gateway:
+  enabled: false
+  nginx:
+    config:
+      serverSnippet: |
+        # Enforce X-Scope-OrgID header for multi-tenancy
+        if ($http_x_scope_orgid = "") {
+          return 400 'X-Scope-OrgID header is required for multi-tenant access';
+        }
+
+# Disable Kafka (not needed for basic setup)
+kafka:
+  enabled: false
+
+# Use traditional architecture instead of ingest storage
+mimir:
+  config: |
+    usage_stats:
+      installation_mode: helm
+
+    activity_tracker:
+      filepath: /active-query-tracker/activity.log
+
+    # Blocks storage configuration
+    blocks_storage:
+      backend: s3
+      storage_prefix: blocks
+      bucket_store:
+        sync_dir: /data/tsdb-sync
+      s3:
+        bucket_name: octabyte-mimir-backend-bucket
+        endpoint: s3.amazonaws.com
+        region: ap-south-1
+      tsdb:
+        dir: /data/tsdb
+        head_compaction_interval: 15m
+        wal_replay_concurrency: 3
+
+    compactor:
+      compaction_interval: 30m
+      deletion_delay: 2h
+      max_closing_blocks_concurrency: 2
+      max_opening_blocks_concurrency: 4
+      symbols_flushers_concurrency: 4
+      first_level_compaction_wait_period: 25m
+      data_dir: "/data"
+      sharding_ring:
+        wait_stability_min_duration: 1m
+        heartbeat_period: 1m
+        heartbeat_timeout: 4m
+
+    distributor:
+      ring:
+        heartbeat_period: 1m
+        heartbeat_timeout: 4m
+
+    frontend:
+      parallelize_shardable_queries: true
+      scheduler_address: {{ template "mimir.fullname" . }}-query-scheduler-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}
+
+    frontend_worker:
+      grpc_client_config:
+        max_send_msg_size: 419430400
+      scheduler_address: {{ template "mimir.fullname" . }}-query-scheduler-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}
+
+    ingester:
+      ring:
+        final_sleep: 0s
+        num_tokens: 512
+        tokens_file_path: /data/tokens
+        unregister_on_shutdown: false
+        heartbeat_period: 2m
+        heartbeat_timeout: 10m
+        zone_awareness_enabled: true
+
+    ingester_client:
+      grpc_client_config:
+        max_recv_msg_size: 104857600
+        max_send_msg_size: 104857600
+
+    limits:
+      max_total_query_length: 12000h
+      max_query_parallelism: 240
+      max_cache_freshness: 10m
+
+    memberlist:
+      abort_if_cluster_join_fails: false
+      compression_enabled: false
+      join_members:
+      - dns+{{ include "mimir.fullname" . }}-gossip-ring.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.memberlistBindPort" . }}
+
+    querier:
+      max_concurrent: 16
+
+    query_scheduler:
+      max_outstanding_requests_per_tenant: 800
+
+    ruler:
+      enable_api: true
+      rule_path: /data
+
+    ruler_storage:
+      backend: s3
+      storage_prefix: ruler
+      s3:
+        bucket_name: octabyte-mimir-backend-bucket
+        endpoint: s3.amazonaws.com
+        region: ap-south-1
+
+    runtime_config:
+      file: /var/{{ include "mimir.name" . }}/runtime.yaml
+
+    store_gateway:
+      sharding_ring:
+        heartbeat_period: 1m
+        heartbeat_timeout: 10m
+        wait_stability_min_duration: 1m
+        tokens_file_path: /data/tokens
+        unregister_on_shutdown: false
+        zone_awareness_enabled: true
+
+    # Enable multi-tenancy
+    multitenancy_enabled: true
+
+# Disable zone-aware replication for simpler deployment
+# Enable this for high availability across multiple zones
+ingester:
+  zoneAwareReplication:
+    enabled: false
+
+store_gateway:
+  zoneAwareReplication:
+    enabled: false
