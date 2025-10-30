@@ -6,7 +6,7 @@ app:
   ingress:
     enabled: true
     hosts:
-      - eks-ui.internal.devtools.osfin.ai
+      - eks-ui.internal.example.com
     ingressClassName: alb
     useDefaultIngressClass: false
     useDefaultAnnotations: false
@@ -29,19 +29,19 @@ app:
     labels: {}
     annotations: 
       alb.ingress.kubernetes.io/backend-protocol: HTTPS
-      alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-south-1:<account_id>:certificate/9ea292d1-168e-4622-962d-659389455272
+      alb.ingress.kubernetes.io/certificate-arn: <acm-cert-arn>
       alb.ingress.kubernetes.io/group.name: internal
       alb.ingress.kubernetes.io/healthcheck-protocol: HTTPS
       alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS":443}]'
       alb.ingress.kubernetes.io/load-balancer-attributes: deletion_protection.enabled=true
       alb.ingress.kubernetes.io/load-balancer-name: k8s-internal
       alb.ingress.kubernetes.io/scheme: internal
-      alb.ingress.kubernetes.io/security-groups: sg-0377cc4a3b7f8f882
+      alb.ingress.kubernetes.io/security-groups: <sg-id>
       alb.ingress.kubernetes.io/ssl-redirect: "443"
-      alb.ingress.kubernetes.io/subnets: subnet-028da623a68f4011f,subnet-06e45d9faede1ac82
+      alb.ingress.kubernetes.io/subnets: <private-subnet-ids>
       alb.ingress.kubernetes.io/success-codes: "200"
       alb.ingress.kubernetes.io/target-type: ip
-      alb.ingress.kubernetes.io/vpc-id: vpc-0b48e2f0bf7165f1a 
+      alb.ingress.kubernetes.io/vpc-id: <vpc-id>
   # Use the following toleration if Dashboard can be deployed on a tainted control-plane nodes
   # - key: node-role.kubernetes.io/control-plane
   #   effect: NoSchedule

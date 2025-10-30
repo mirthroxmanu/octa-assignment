@@ -289,7 +289,7 @@ ingress:
     alb.ingress.kubernetes.io/backend-protocol: HTTP
     alb.ingress.kubernetes.io/target-type: ip    
     # SSL/TLS configuration (ALB handles SSL, not backend)
-    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-south-1:<account_id>:certificate/9ea292d1-168e-4622-962d-659389455272
+    alb.ingress.kubernetes.io/certificate-arn: <acmcert arn>
     alb.ingress.kubernetes.io/ssl-redirect: "443"
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'    
     # Health check - CHANGED TO HTTP
@@ -302,9 +302,9 @@ ingress:
     alb.ingress.kubernetes.io/load-balancer-name: k8s-internal
     alb.ingress.kubernetes.io/load-balancer-attributes: deletion_protection.enabled=true    
     # Network configuration
-    alb.ingress.kubernetes.io/subnets: subnet-028da623a68f4011f,subnet-06e45d9faede1ac82
-    alb.ingress.kubernetes.io/security-groups: sg-0377cc4a3b7f8f882
-    alb.ingress.kubernetes.io/vpc-id: vpc-0b48e2f0bf7165f1a
+    alb.ingress.kubernetes.io/subnets: <private subnet ids>
+    alb.ingress.kubernetes.io/security-groups: <sg-id>
+    alb.ingress.kubernetes.io/vpc-id: <vpc-id>
     #Tags
     alb.ingress.kubernetes.io/tags: env=octabyte,account=<account_id>,application=grafana,ManagedBy=kubernetes,Project=octabyte,CostCenter=engineering
     # Add these for better health checks
@@ -320,7 +320,7 @@ ingress:
   pathType: Prefix
 
   hosts:
-    - grafana-ui.internal.devtools.osfin.ai
+    - grafana-ui.internal.example.com
   ## Extra paths to prepend to every host configuration. This is useful when working with annotation based services.
   extraPaths: []
   # - path: /*
